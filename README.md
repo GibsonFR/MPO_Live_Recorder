@@ -1,4 +1,4 @@
-Mo-Live Extension - Quick Setup
+Multiplayer Orchestra-Live Recorder Extension - Quick Setup
 --------------------------------
 
 Requirements:
