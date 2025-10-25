@@ -1,0 +1,19 @@
+{
+  "name": "MultiPlayer Orchestra Live Recorder",
+  "description": "",
+  "version": "1.0.0",
+  "manifest_version": 3,
+  "content_scripts": [
+    {
+      "matches": ["https://multiplayer-orchestra.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["mo-live.bundle.js"],
+      "matches": ["https://multiplayer-orchestra.com/*"]
+    }
+  ]
+}
