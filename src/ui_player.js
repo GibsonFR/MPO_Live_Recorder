@@ -126,8 +126,13 @@ function makePlayer(){
   }
   function allNotesOff(){
     const out = currentOut(); if(!out) return;
-    for(let ch=0;ch<16;ch++) out.send([0xB0|ch, 123, 0]);
-  }
+    for(let ch=0;ch<16;ch++){
+        out.send([0xB0|ch, 64, 0]);   
+        out.send([0xB0|ch, 123, 0]);  
+        out.send([0xB0|ch, 120, 0]);  
+    }
+}
+
 
   function seek(seconds){
     

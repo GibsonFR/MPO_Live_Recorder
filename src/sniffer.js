@@ -49,7 +49,12 @@ function normEvents(arr){
     const name=String(e.name||e.n||"").toUpperCase();
     const ts=(e.timestamp??e.ts??e.time??e.tms??0)|0;
     if (name==="SUSTAIN" || name.includes("SUSTAIN") || e.cc===64 || e.control===64){
-      const val=(e.sustain===true)?127 : Number.isFinite(e.value)?(e.value>=64?127:0) : Number.isFinite(e.v)?(e.v>=64?127:0) : 127;
+      const raw = (e.value ?? e.v ?? e.val);
+      let val;
+      if (e.sustain === true) { val = 127; }
+      else if (e.sustain === false) { val = 0; }
+      else if (Number.isFinite(raw)) { val = Math.max(0, Math.min(127, raw|0)); }
+      else { val = 0; }
       out.push({type:'cc',cc:64,val,ts}); continue;
     }
     if (name==="NOTE_ON" || name==="ON" || e.on===1 || e.down===true){
@@ -64,6 +69,7 @@ function normEvents(arr){
   }
   return out;
 }
+
 function batchKey(b){
   const evs=Array.isArray(b.events)?b.events:[]; let min=Infinity,max=-Infinity;
   for(const e of evs){ const t=(e.timestamp??e.ts??e.tms??e.time??0)|0; if(t<min) min=t; if(t>max) max=t; }
