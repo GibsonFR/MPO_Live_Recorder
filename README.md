@@ -13,11 +13,10 @@ Installation:
   5) The extension should now appear in your toolbar
 
 Usage:
+  - Go to https://multiplayer-orchestra.com
   - Make sure your MIDI output (real or virtual) is active
-  - Open the web app you want to use
-  - Click the Mo-Live icon in Chrome
   - The extension detects MIDI ports automatically
-  - Select your output and start playing
+  - Select your output and start recording/playing
 
 Troubleshooting:
   - If nothing happens, check Chrome MIDI permissions
