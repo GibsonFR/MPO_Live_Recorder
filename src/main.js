@@ -3,7 +3,6 @@ import { makeDraggable, addMinimizer } from "./draggable.js";
 import { requestMIDI, listOutputs, setOutputById, midiName } from "./midi.js";
 import { hookWebSocket } from "./sniffer.js";
 import { mountRecorderUI } from "./ui_recorder.js";
-import { mountMonitorUI } from "./ui_monitor.js";
 import { mountPlayerUI } from "./ui_player.js";
 
 
@@ -81,6 +80,5 @@ test.onclick=async ()=>{
 
 
 try{ mountRecorderUI(); }catch(e){ console.warn('recorder-ui failed', e); }
-try{ mountMonitorUI(); }catch(e){ console.warn('monitor-ui failed', e); }
 try{ hookWebSocket(); }catch(e){ console.warn('sniffer failed', e); }
 try{ mountPlayerUI(); }catch(e){ console.warn('player-ui failed', e); }
