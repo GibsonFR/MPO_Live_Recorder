@@ -4,6 +4,7 @@ Multiplayer Orchestra-Live Recorder Extension - Quick Setup
 Requirements:
 
    A real or virtual MIDI output (e.g. loopMIDI or a connected keyboard)
+   
    Google chrome
 
 Installation:
