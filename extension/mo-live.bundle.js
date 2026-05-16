@@ -1,5 +1,5 @@
 (() => {
-  // src/state.js
+  // mnt/data/playlist_work/src/state.js
   var AppState = {
     record: false,
     path: "\u2014",
@@ -27,7 +27,7 @@
     return p;
   }
 
-  // src/draggable.js
+  // mnt/data/playlist_work/src/draggable.js
   function makeDraggable(panel, handle) {
     let sx = 0, sy = 0, ox = 0, oy = 0, drag = false;
     const down = (e) => {
@@ -104,7 +104,7 @@
     return { button: btn };
   }
 
-  // src/utils.js
+  // mnt/data/playlist_work/src/utils.js
   var PPQ = 480;
   var TEMPO_USPQN = 5e5;
   var clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -166,7 +166,7 @@
     }, 2e3);
   }
 
-  // src/midi.js
+  // mnt/data/playlist_work/src/midi.js
   function requestMIDI(onChange) {
     if (!navigator.requestMIDIAccess) return Promise.reject(new Error("no-webmidi"));
     return navigator.requestMIDIAccess({ sysex: false }).then((access) => {
@@ -224,7 +224,7 @@
     out.send([176, 64, flag ? 127 : 0]);
   }
 
-  // src/sniffer.js
+  // mnt/data/playlist_work/src/sniffer.js
   var TD = typeof TextDecoder !== "undefined" ? new TextDecoder() : null;
   var arrVal = (o, keys) => {
     for (const k of keys) {
@@ -796,7 +796,7 @@
     __moWorker.hooked = true;
   }
 
-  // src/ui_recorder.js
+  // mnt/data/playlist_work/src/ui_recorder.js
   function mountRecorderUI() {
     const box = document.createElement("div");
     Object.assign(box.style, { position: "fixed", right: "12px", top: "12px", zIndex: 999999, minWidth: "420px", color: "#eee", fontFamily: "system-ui", background: "rgba(17,17,17,.95)", borderRadius: "10px", boxShadow: "0 10px 30px rgba(0,0,0,.6)", maxHeight: "70vh", overflow: "hidden" });
@@ -914,7 +914,7 @@
     return { box };
   }
 
-  // src/ui_player.js
+  // mnt/data/playlist_work/src/ui_player.js
   var MIDI_DB_NAME = "mo_midi_library_v1";
   var MIDI_STORE = "files";
   function openMidiDb() {
@@ -971,6 +971,58 @@
       req2.onerror = () => reject(req2.error);
       tx.oncomplete = () => db.close();
     });
+  }
+  var MIDI_COLLECTIONS_KEY = "mo_midi_collections_v2";
+  var MIDI_PLAYER_PREF_KEY = "mo_midi_player_prefs_v2";
+  var ALL_LIBRARY_ID = "__all__";
+  function uid(prefix = "lib") {
+    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+  function loadPlayerPrefs() {
+    try {
+      return JSON.parse(localStorage.getItem(MIDI_PLAYER_PREF_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  }
+  function savePlayerPrefs(prefs) {
+    try {
+      localStorage.setItem(MIDI_PLAYER_PREF_KEY, JSON.stringify(prefs || {}));
+    } catch {
+    }
+  }
+  function loadCollections() {
+    let cols = [];
+    try {
+      cols = JSON.parse(localStorage.getItem(MIDI_COLLECTIONS_KEY) || "[]") || [];
+    } catch {
+      cols = [];
+    }
+    cols = cols.filter((c) => c && c.id && c.id !== ALL_LIBRARY_ID).map((c) => ({
+      id: String(c.id),
+      name: String(c.name || "Library"),
+      fileIds: Array.isArray(c.fileIds) ? [...new Set(c.fileIds.map(String))] : [],
+      createdAt: c.createdAt || Date.now(),
+      updatedAt: c.updatedAt || c.createdAt || Date.now()
+    }));
+    return cols;
+  }
+  function saveCollections(cols) {
+    try {
+      localStorage.setItem(MIDI_COLLECTIONS_KEY, JSON.stringify(cols || []));
+    } catch {
+    }
+  }
+  function collectionLabel(col, count) {
+    return `${col.name} (${count})`;
+  }
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
   }
   function readUint16(dv, off) {
     return dv.getUint8(off) << 8 | dv.getUint8(off + 1);
@@ -1069,6 +1121,7 @@
     let transpose = 0;
     let cursor = 0;
     let rafId = null;
+    let endedCb = null;
     const active = /* @__PURE__ */ new Map();
     function currentOut() {
       return AppState.midi.out;
@@ -1154,6 +1207,7 @@
         startPos = duration();
         allNotesOff();
         rafId = null;
+        if (typeof endedCb === "function") setTimeout(() => endedCb(), 0);
         return;
       }
       rafId = requestAnimationFrame(_tick);
@@ -1204,7 +1258,10 @@
       cursor = 0;
       return { duration: duration(), events: events.length };
     }
-    return { play, pause, stop, seek, setTempoMul, setTranspose, loadBuffer, duration, isPlaying: () => playing, currentTime };
+    function setOnEnded(fn) {
+      endedCb = fn;
+    }
+    return { play, pause, stop, seek, setTempoMul, setTranspose, loadBuffer, duration, isPlaying: () => playing, currentTime, setOnEnded };
   }
   function mountPlayerUI() {
     const box = document.createElement("div");
@@ -1227,20 +1284,34 @@
     box.innerHTML = `
     <style>
       .mo-btn{background:#2b2b2b;color:#eee;border:1px solid #444;padding:6px 10px;border-radius:8px;user-select:none;cursor:pointer}
-      .mo-btn:hover{background:#353535}.mo-btn.active{background:#2f8f55}
+      .mo-btn:hover{background:#353535}.mo-btn.active{background:#2f8f55}.mo-btn.danger{background:#4a2525}.mo-btn.warn{background:#4a3a22}
       .mo-chip{background:#1b1b1b;padding:3px 8px;border-radius:10px}
       .mo-input{background:#1b1b1b;color:#eee;border:1px solid #333;border-radius:8px;padding:6px}
       .mo-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.mo-col{display:flex;flex-direction:column;gap:4px}
+      .mo-grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mo-mini{font-size:11px;opacity:.68}.mo-sect{margin-top:8px;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:9px;background:rgba(255,255,255,.025)}
       #drop{border:1px dashed #555;padding:10px;border-radius:8px;text-align:center;opacity:.9}
       #drop.drag{background:#202020}.lib-row{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center}.lib-meta{font-size:11px;opacity:.65}
       #files{width:100%;height:126px}#seek{width:100%}#hdr{display:flex;align-items:center;gap:8px;user-select:none;cursor:move}
+      #collectionSelect{min-width:190px;flex:1}#playlistOrder{min-width:130px}.playlist-on{box-shadow:0 0 0 1px rgba(80,220,140,.45) inset}
     </style>
     <div id="hdr"><strong>MIDI Player</strong><span id="status" class="mo-chip" style="margin-left:auto;background:#444">idle</span></div>
     <div id="body" style="max-height:calc(76vh - 45px);overflow:auto;padding-right:4px">
       <div id="drop" style="margin-top:8px">Drop MIDI files here (.mid / .midi)</div>
       <input id="pick" type="file" accept=".mid,.midi,audio/midi" multiple style="display:none">
-      <div class="mo-row" style="margin-top:8px"><button id="browse" class="mo-btn">Add MIDI</button><button id="deleteFile" class="mo-btn">Delete</button><button id="renameFile" class="mo-btn">Rename</button><button id="reloadLib" class="mo-btn">Refresh</button></div>
-      <div class="mo-col" style="margin-top:8px"><label>Library</label><select id="files" class="mo-input" size="6"></select></div>
+
+      <div class="mo-sect">
+        <div class="mo-row"><strong>Libraries</strong><select id="collectionSelect" class="mo-input"></select><button id="newCollection" class="mo-btn">New</button><button id="renameCollection" class="mo-btn">Rename</button><button id="deleteCollection" class="mo-btn danger">Delete</button></div>
+        <div class="mo-mini" id="collectionInfo" style="margin-top:5px">All MIDI files</div>
+      </div>
+
+      <div class="mo-row" style="margin-top:8px"><button id="browse" class="mo-btn">Add MIDI</button><button id="removeFromCollection" class="mo-btn warn">Remove from library</button><button id="deleteFile" class="mo-btn danger">Delete file</button><button id="renameFile" class="mo-btn">Rename</button><button id="reloadLib" class="mo-btn">Refresh</button></div>
+      <div class="mo-col" style="margin-top:8px"><label>Tracks</label><select id="files" class="mo-input" size="6"></select></div>
+
+      <div class="mo-sect" id="playlistBox">
+        <div class="mo-row"><strong>Playlist</strong><button id="playlistStart" class="mo-btn">Start</button><button id="playlistStop" class="mo-btn">Stop</button><label><input id="playlistAuto" type="checkbox"> Auto-play</label><select id="playlistOrder" class="mo-input"><option value="order">In order</option><option value="random">Random non-repeat</option></select></div>
+        <div class="mo-mini" id="playlistInfo" style="margin-top:5px">Stopped</div>
+      </div>
+
       <div class="mo-row" style="margin-top:8px"><button id="play" class="mo-btn">Play</button><button id="pause" class="mo-btn">Pause</button><button id="stop" class="mo-btn">Stop</button><span class="mo-chip"><span id="cur">0:00</span> / <span id="dur">0:00</span></span></div>
       <div class="mo-row" style="margin-top:8px"><input id="seek" type="range" min="0" max="1000" value="0"></div>
       <div class="mo-row" style="margin-top:8px"><label>Tempo</label><input id="tempo" type="range" min="25" max="400" value="100"><span id="tempoVal" class="mo-chip">1.00\xD7</span><label style="margin-left:12px">Transpose</label><input id="transpose" type="range" min="-24" max="24" value="0"><span id="transVal" class="mo-chip">0</span></div>
@@ -1265,12 +1336,30 @@
     const trans = box.querySelector("#transpose");
     const transVal = box.querySelector("#transVal");
     const autoPause = box.querySelector("#autoPause");
+    const collectionSelect = box.querySelector("#collectionSelect");
+    const collectionInfo = box.querySelector("#collectionInfo");
+    const newCollectionBtn = box.querySelector("#newCollection");
+    const renameCollectionBtn = box.querySelector("#renameCollection");
+    const deleteCollectionBtn = box.querySelector("#deleteCollection");
+    const removeFromCollectionBtn = box.querySelector("#removeFromCollection");
+    const playlistBox = box.querySelector("#playlistBox");
+    const playlistStartBtn = box.querySelector("#playlistStart");
+    const playlistStopBtn = box.querySelector("#playlistStop");
+    const playlistAuto = box.querySelector("#playlistAuto");
+    const playlistOrder = box.querySelector("#playlistOrder");
+    const playlistInfo = box.querySelector("#playlistInfo");
     const player = makePlayer();
     let duration = 0;
     let uiTickId = null;
     let library = [];
-    let loadedId = null;
+    let filteredLibrary = [];
+    let collections = [];
+    let activeCollectionId = loadPlayerPrefs().activeCollectionId || ALL_LIBRARY_ID;
+    let loadedId = loadPlayerPrefs().lastTrackId || null;
     let hiddenAutoPaused = false;
+    let playlistActive = false;
+    let randomQueue = [];
+    let loadingTrack = false;
     function fmt(t) {
       t = Math.max(0, Math.floor(t || 0));
       const m = Math.floor(t / 60), s = t % 60;
@@ -1283,6 +1372,26 @@
     function refreshButtons() {
       playBtn.classList.toggle("active", player.isPlaying());
       pauseBtn.classList.toggle("active", !player.isPlaying() && duration > 0);
+      playlistBox.classList.toggle("playlist-on", playlistActive);
+    }
+    function prefsPatch(patch) {
+      const p = loadPlayerPrefs();
+      Object.assign(p, patch);
+      savePlayerPrefs(p);
+    }
+    function getActiveCollection() {
+      return activeCollectionId === ALL_LIBRARY_ID ? { id: ALL_LIBRARY_ID, name: "All MIDI", fileIds: library.map((x) => x.id) } : collections.find((c) => c.id === activeCollectionId);
+    }
+    function getFilteredLibrary() {
+      if (activeCollectionId === ALL_LIBRARY_ID) return library.slice();
+      const col = collections.find((c) => c.id === activeCollectionId);
+      if (!col) return [];
+      const allowed = new Set(col.fileIds);
+      return library.filter((x) => allowed.has(x.id));
+    }
+    function updatePlaylistInfo(text) {
+      if (text) playlistInfo.textContent = text;
+      else playlistInfo.textContent = playlistActive ? `${playlistOrder.value === "random" ? "Random non-repeat" : "In order"} \xB7 ${filteredLibrary.length} track(s)` : "Stopped";
     }
     function startUiTick() {
       if (uiTickId) cancelAnimationFrame(uiTickId);
@@ -1303,17 +1412,42 @@
     async function loadLibrary() {
       try {
         library = await libraryList();
+        collections = loadCollections();
+        if (activeCollectionId !== ALL_LIBRARY_ID && !collections.some((c) => c.id === activeCollectionId)) activeCollectionId = ALL_LIBRARY_ID;
+        collectionSelect.innerHTML = "";
+        const allOpt = document.createElement("option");
+        allOpt.value = ALL_LIBRARY_ID;
+        allOpt.textContent = `All MIDI (${library.length})`;
+        collectionSelect.appendChild(allOpt);
+        for (const col of collections) {
+          const count = col.fileIds.filter((id) => library.some((f) => f.id === id)).length;
+          const opt = document.createElement("option");
+          opt.value = col.id;
+          opt.textContent = collectionLabel(col, count);
+          collectionSelect.appendChild(opt);
+        }
+        collectionSelect.value = activeCollectionId;
+        filteredLibrary = getFilteredLibrary();
         files.innerHTML = "";
-        for (const item of library) {
+        for (const item of filteredLibrary) {
           const opt = document.createElement("option");
           opt.value = item.id;
           opt.textContent = item.name;
           opt.title = `${item.name} \u2014 ${Math.round((item.size || 0) / 1024)} KB`;
           files.appendChild(opt);
         }
-        if (loadedId && library.some((x) => x.id === loadedId)) files.value = loadedId;
-        else if (files.options.length && !files.value) files.selectedIndex = 0;
-        setStatus(library.length ? "library ready" : "empty library", !!library.length);
+        if (loadedId && filteredLibrary.some((x) => x.id === loadedId)) files.value = loadedId;
+        else if (files.options.length) {
+          files.selectedIndex = 0;
+        }
+        const activeCol = getActiveCollection();
+        collectionInfo.textContent = activeCollectionId === ALL_LIBRARY_ID ? "All saved MIDI files" : `${activeCol?.name || "Library"} \xB7 ${filteredLibrary.length} track(s)`;
+        removeFromCollectionBtn.disabled = activeCollectionId === ALL_LIBRARY_ID || !files.value;
+        deleteCollectionBtn.disabled = activeCollectionId === ALL_LIBRARY_ID;
+        renameCollectionBtn.disabled = activeCollectionId === ALL_LIBRARY_ID;
+        setStatus(filteredLibrary.length ? "library ready" : "empty library", !!filteredLibrary.length);
+        updatePlaylistInfo();
+        prefsPatch({ activeCollectionId, lastTrackId: files.value || loadedId || null });
       } catch (e) {
         console.error(e);
         setStatus("library error", false);
@@ -1326,32 +1460,48 @@
         const id = fileId(f.name, f.size, f.lastModified);
         await libraryPut({ id, name: f.name, size: f.size, addedAt: Date.now(), data });
         loadedId = id;
+        if (activeCollectionId !== ALL_LIBRARY_ID) {
+          const cols = loadCollections();
+          const col = cols.find((c) => c.id === activeCollectionId);
+          if (col && !col.fileIds.includes(id)) {
+            col.fileIds.push(id);
+            col.updatedAt = Date.now();
+            saveCollections(cols);
+          }
+        }
       }
       await loadLibrary();
       files.value = loadedId || files.value;
       await loadSelected();
     }
-    async function loadSelected() {
-      const id = files.value;
+    async function loadSelected(idOverride = null) {
+      const id = idOverride || files.value;
       if (!id) {
         setStatus("no file", false);
-        return;
+        return false;
       }
       const item = await libraryGet(id);
       if (!item?.data) {
         setStatus("missing file", false);
-        return;
+        return false;
       }
       try {
+        loadingTrack = true;
         const info = player.loadBuffer(item.data);
         loadedId = id;
         duration = player.duration();
+        files.value = id;
         durEl.textContent = fmt(duration);
         seek.value = "0";
+        prefsPatch({ lastTrackId: id, activeCollectionId });
         setStatus(`ready \xB7 ${item.name}`, true);
+        return true;
       } catch (err) {
         console.error(err);
         setStatus("parse error", false);
+        return false;
+      } finally {
+        loadingTrack = false;
       }
     }
     box.addEventListener("dragover", (e) => e.preventDefault());
@@ -1371,10 +1521,72 @@
       pick.value = "";
     };
     box.querySelector("#reloadLib").onclick = loadLibrary;
+    collectionSelect.onchange = async () => {
+      activeCollectionId = collectionSelect.value || ALL_LIBRARY_ID;
+      randomQueue = [];
+      prefsPatch({ activeCollectionId });
+      await loadLibrary();
+    };
+    newCollectionBtn.onclick = async () => {
+      const name = prompt("Library name", "New library");
+      if (!name) return;
+      const cols = loadCollections();
+      const col = { id: uid("library"), name: name.trim(), fileIds: [], createdAt: Date.now(), updatedAt: Date.now() };
+      cols.push(col);
+      saveCollections(cols);
+      activeCollectionId = col.id;
+      await loadLibrary();
+    };
+    renameCollectionBtn.onclick = async () => {
+      if (activeCollectionId === ALL_LIBRARY_ID) return;
+      const cols = loadCollections();
+      const col = cols.find((c) => c.id === activeCollectionId);
+      if (!col) return;
+      const name = prompt("Library name", col.name);
+      if (!name) return;
+      col.name = name.trim();
+      col.updatedAt = Date.now();
+      saveCollections(cols);
+      await loadLibrary();
+    };
+    deleteCollectionBtn.onclick = async () => {
+      if (activeCollectionId === ALL_LIBRARY_ID) return;
+      const col = collections.find((c) => c.id === activeCollectionId);
+      if (!col) return;
+      if (!confirm(`Delete library "${col.name}"? MIDI files stay saved.`)) return;
+      saveCollections(loadCollections().filter((c) => c.id !== activeCollectionId));
+      activeCollectionId = ALL_LIBRARY_ID;
+      randomQueue = [];
+      await loadLibrary();
+    };
+    removeFromCollectionBtn.onclick = async () => {
+      if (activeCollectionId === ALL_LIBRARY_ID) return;
+      const id = files.value;
+      if (!id) return;
+      const cols = loadCollections();
+      const col = cols.find((c) => c.id === activeCollectionId);
+      if (!col) return;
+      col.fileIds = col.fileIds.filter((x) => x !== id);
+      col.updatedAt = Date.now();
+      saveCollections(cols);
+      if (id === loadedId) {
+        player.stop();
+        loadedId = null;
+        duration = 0;
+      }
+      await loadLibrary();
+    };
     box.querySelector("#deleteFile").onclick = async () => {
       const id = files.value;
       if (!id) return;
+      const item = await libraryGet(id);
+      if (!confirm(`Delete "${item?.name || "this MIDI"}" from storage and all libraries?`)) return;
       await libraryDelete(id);
+      const cols = loadCollections();
+      for (const c of cols) {
+        c.fileIds = c.fileIds.filter((x) => x !== id);
+      }
+      saveCollections(cols);
       if (id === loadedId) {
         player.stop();
         loadedId = null;
@@ -1395,9 +1607,12 @@
       await loadLibrary();
       files.value = id;
     };
-    files.addEventListener("change", loadSelected);
+    files.addEventListener("change", () => {
+      prefsPatch({ lastTrackId: files.value });
+      loadSelected();
+    });
     playBtn.addEventListener("click", async () => {
-      if (!library.length) {
+      if (!filteredLibrary.length) {
         setStatus("add a MIDI file", false);
         return;
       }
@@ -1413,6 +1628,74 @@
       player.stop();
       setStatus("stopped", false);
     });
+    function orderedIds() {
+      return filteredLibrary.map((x) => x.id);
+    }
+    function rebuildRandomQueue(excludeId = null) {
+      const ids = orderedIds().filter((id) => id !== excludeId);
+      randomQueue = shuffle(ids);
+    }
+    function nextPlaylistId() {
+      const ids = orderedIds();
+      if (!ids.length) return null;
+      if (playlistOrder.value === "random") {
+        if (!randomQueue.length) rebuildRandomQueue(loadedId);
+        return randomQueue.shift() || ids.find((id) => id !== loadedId) || ids[0];
+      }
+      const cur = loadedId || files.value;
+      const idx = Math.max(0, ids.indexOf(cur));
+      return ids[(idx + 1) % ids.length];
+    }
+    async function playTrackById(id) {
+      if (!id) return;
+      files.value = id;
+      const ok = await loadSelected(id);
+      if (ok) {
+        player.play();
+        setStatus("playing", true);
+        updatePlaylistInfo();
+      }
+    }
+    async function playNextFromPlaylist() {
+      if (!playlistActive || !playlistAuto.checked) return;
+      const next = nextPlaylistId();
+      if (next) await playTrackById(next);
+    }
+    player.setOnEnded(() => {
+      playNextFromPlaylist();
+    });
+    playlistStartBtn.onclick = async () => {
+      if (!filteredLibrary.length) {
+        setStatus("playlist empty", false);
+        return;
+      }
+      playlistActive = true;
+      playlistAuto.checked = true;
+      randomQueue = [];
+      prefsPatch({ playlistAuto: true, playlistOrder: playlistOrder.value });
+      const id = files.value || filteredLibrary[0]?.id;
+      await playTrackById(id);
+      updatePlaylistInfo();
+    };
+    playlistStopBtn.onclick = () => {
+      playlistActive = false;
+      playlistAuto.checked = false;
+      randomQueue = [];
+      prefsPatch({ playlistAuto: false });
+      updatePlaylistInfo("Stopped");
+      refreshButtons();
+    };
+    playlistAuto.onchange = () => {
+      playlistActive = playlistAuto.checked;
+      prefsPatch({ playlistAuto: playlistAuto.checked });
+      updatePlaylistInfo();
+      refreshButtons();
+    };
+    playlistOrder.onchange = () => {
+      randomQueue = [];
+      prefsPatch({ playlistOrder: playlistOrder.value });
+      updatePlaylistInfo();
+    };
     seek.addEventListener("mousedown", () => seek._dragging = true);
     seek.addEventListener("mouseup", () => {
       seek._dragging = false;
@@ -1445,12 +1728,17 @@
         setStatus("paused", false);
       }
     });
+    const savedPrefs = loadPlayerPrefs();
+    playlistAuto.checked = !!savedPrefs.playlistAuto;
+    playlistActive = !!savedPrefs.playlistAuto;
+    playlistOrder.value = savedPrefs.playlistOrder || "order";
+    updatePlaylistInfo();
     loadLibrary();
     startUiTick();
     return { box };
   }
 
-  // src/ui_reactive_color.js
+  // mnt/data/playlist_work/src/ui_reactive_color.js
   var PREF_ENDPOINT = "/api/mpo/users/@me/preferences";
   var STORE_KEY = "mo_reactive_color_matrix_presets_v2";
   var TD2 = typeof TextDecoder !== "undefined" ? new TextDecoder() : null;
@@ -3043,7 +3331,7 @@
     return { box };
   }
 
-  // src/ui_synthesia_trainer.js
+  // mnt/data/playlist_work/src/ui_synthesia_trainer.js
   var MIDI_DB_NAME2 = "mo_midi_library_v1";
   var MIDI_STORE2 = "files";
   var TRAINER_PREF_KEY = "mo_synthesia_trainer_prefs_v1";
@@ -3813,7 +4101,7 @@
     } };
   }
 
-  // src/ui_dock.js
+  // mnt/data/playlist_work/src/ui_dock.js
   function setVisible(item, visible) {
     if (!item || !item.box) return;
     item.box.style.display = visible ? "" : "none";
@@ -3952,7 +4240,7 @@
     return { dock, items: normalized };
   }
 
-  // src/main.js
+  // mnt/data/playlist_work/src/main.js
   var outBox = document.createElement("div");
   Object.assign(outBox.style, {
     position: "fixed",
